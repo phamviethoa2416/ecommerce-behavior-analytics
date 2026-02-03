@@ -32,4 +32,5 @@ logs/
 
 /data
 
+*.json
 *.csv

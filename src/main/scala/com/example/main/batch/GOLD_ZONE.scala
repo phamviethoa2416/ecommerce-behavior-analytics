@@ -59,7 +59,7 @@ object GOLD_ZONE {
       val workingDf = Try(
         spark.read.format("delta")
           .load(s"gs://$gcsBucketName/$workingPath")
-          .filter(col("event_date") === lit(processingDate))
+          .filter(col("ingestion_date") === lit(processingDate))
       ) match {
         case Success(df) =>
           logger.info("Successfully read Working Zone data")
@@ -73,7 +73,7 @@ object GOLD_ZONE {
       val recordCount = cachedWorkingDf.count()
 
       if (recordCount == 0) {
-        logger.warn(s"No records found in Working Zone for event_date=$processingDate. Exiting.")
+        logger.warn(s"No records found in Working Zone for ingestion_date=$processingDate. Exiting.")
         cachedWorkingDf.unpersist()
         spark.stop()
         return

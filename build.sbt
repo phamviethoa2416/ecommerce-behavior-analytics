@@ -28,6 +28,7 @@ lazy val root = (project in file("."))
       "com.typesafe" % "config" % "1.4.3",
 
       "com.clickhouse" % "clickhouse-jdbc" % "0.6.4",
+      "com.clickhouse" % "clickhouse-http-client" % "0.6.4",
       "org.apache.httpcomponents.core5" % "httpcore5" % "5.2.1",
       "org.apache.httpcomponents.client5" % "httpclient5" % "5.2.1",
 

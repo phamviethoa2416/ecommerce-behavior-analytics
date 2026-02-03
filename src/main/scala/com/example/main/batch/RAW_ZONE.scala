@@ -60,13 +60,29 @@ object RAW_ZONE {
         .options(kafkaOptions)
         .option("subscribe", topic)
         .option("startingOffsets", "earliest")
+        .option("consumerGroup", "raw-zone-batch-group")
         .option("failOnDataLoss", "false")
-        .option("maxOffsetsPerTrigger", 100000)
         .load()
 
+      val removeAvroMagicBytes = udf((bytes: Array[Byte]) => {
+        if (bytes == null || bytes.length <= 5) {
+          null
+        } else {
+          try {
+            new String(bytes.slice(5, bytes.length), "UTF-8")
+          } catch {
+            case e: Exception =>
+              logger.error(s"Error removing Avro magic bytes: ${e.getMessage}", e)
+              null
+          }
+        }
+      })
+
+      val jsonValue = removeAvroMagicBytes(col("value"))
+      
       val rawDf = kafkaDf.select(
-          col("value").cast("string").alias("raw_payload"),
-          from_json(col("value").cast("string"), Schema.debeziumCDC).alias("data"),
+          jsonValue.alias("raw_payload"),
+          from_json(jsonValue, Schema.debeziumCDC).alias("data"),
           col("topic"),
           col("partition"),
           col("offset"),
@@ -77,11 +93,27 @@ object RAW_ZONE {
         .filter(col("data.op").isNotNull && col("data.op") =!= "d")
 
       val query = rawDf.writeStream
-        .trigger(Trigger.Once())
+        .trigger(Trigger.ProcessingTime("5 minutes"))
         .option("checkpointLocation", s"$checkpointPath/raw_zone")
         .foreachBatch { (batchDf: DataFrame, batchId: Long) =>
           if (!batchDf.isEmpty) {
             logger.info(s"Processing batch $batchId")
+            batchDf
+              .select("raw_payload", "topic", "partition", "offset")
+              .limit(5)
+              .collect()
+              .foreach { row =>
+                logger.info(
+                  s"""
+                     |Kafka message:
+                     |topic=${row.getAs[String]("topic")}
+                     |partition=${row.getAs[Int]("partition")}
+                     |offset=${row.getAs[Long]("offset")}
+                     |payload=${row.getAs[String]("raw_payload")}
+           """.stripMargin
+                )
+              }
+
             writeToRawZone(batchDf, gcsBucketName, rawPath) match {
               case Success(_) =>
                 logger.info(s"Batch $batchId: Raw Zone write completed successfully")
